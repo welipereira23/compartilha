@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 
 interface FormData {
   nome: string;
@@ -20,136 +20,26 @@ export default function Home() {
     rg: '',
     cpf: '',
   });
-  const [fotos, setFotos] = useState<Blob[]>([]);
+  const [fotos, setFotos] = useState<File[]>([]);
   const [fotosPreview, setFotosPreview] = useState<string[]>([]);
-  const [stream, setStream] = useState<MediaStream | null>(null);
-  const [cameraReady, setCameraReady] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  const iniciarCamera = async () => {
-    try {
-      setCameraReady(false);
-      let mediaStream: MediaStream;
-
-      // Primeiro tenta a câmera traseira
-      try {
-        mediaStream = await navigator.mediaDevices.getUserMedia({
-          video: { 
-            facingMode: { exact: "environment" },
-            width: { ideal: 1280 },
-            height: { ideal: 720 }
-          }
-        });
-      } catch {
-        // Se não conseguir a câmera traseira, tenta qualquer câmera
-        mediaStream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            width: { ideal: 1280 },
-            height: { ideal: 720 }
-          }
-        });
-      }
-
-      setStream(mediaStream);
+  const handleFotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files) {
+      const novasfotos = Array.from(files);
+      setFotos(prev => [...prev, ...novasfotos]);
       
-      if (videoRef.current) {
-        videoRef.current.srcObject = mediaStream;
-        // Forçar o play do vídeo
-        try {
-          await videoRef.current.play();
-        } catch (error) {
-          console.error('Erro ao iniciar o vídeo:', error);
-        }
-      }
-    } catch (error) {
-      console.error('Erro ao acessar a câmera:', error);
-      alert('Erro ao acessar a câmera. Verifique as permissões.');
+      // Criar URLs para preview
+      const novosPreview = novasfotos.map(foto => URL.createObjectURL(foto));
+      setFotosPreview(prev => [...prev, ...novosPreview]);
     }
   };
-
-  const pararCamera = () => {
-    if (stream) {
-      stream.getTracks().forEach(track => track.stop());
-      setStream(null);
-      setCameraReady(false);
-      if (videoRef.current) {
-        videoRef.current.srcObject = null;
-      }
-    }
-  };
-
-  const tirarFoto = () => {
-    if (!cameraReady) {
-      alert('Aguarde a câmera inicializar completamente');
-      return;
-    }
-
-    if (videoRef.current && canvasRef.current) {
-      const video = videoRef.current;
-      const canvas = canvasRef.current;
-      
-      // Configurar canvas com as dimensões do vídeo
-      const width = video.videoWidth || video.clientWidth || 1280;
-      const height = video.videoHeight || video.clientHeight || 720;
-      
-      canvas.width = width;
-      canvas.height = height;
-      
-      // Capturar frame do vídeo
-      const context = canvas.getContext('2d');
-      if (context) {
-        // Se o vídeo estiver espelhado, espelhar o canvas também
-        context.save();
-        context.scale(-1, 1);
-        context.drawImage(video, -width, 0, width, height);
-        context.restore();
-        
-        // Converter para blob
-        canvas.toBlob((blob) => {
-          if (blob) {
-            const novaFoto = URL.createObjectURL(blob);
-            setFotos(prev => [...prev, blob]);
-            setFotosPreview(prev => [...prev, novaFoto]);
-          }
-        }, 'image/jpeg', 0.8);
-      }
-    }
-  };
-
-  // Detectar quando o vídeo está realmente pronto
-  useEffect(() => {
-    const video = videoRef.current;
-    if (video) {
-      const handleCanPlay = () => {
-        console.log('Vídeo pronto para reprodução');
-        setCameraReady(true);
-      };
-
-      const handleError = (error: Event) => {
-        console.error('Erro no vídeo:', error);
-        setCameraReady(false);
-      };
-
-      video.addEventListener('canplay', handleCanPlay);
-      video.addEventListener('error', handleError);
-
-      // Se o vídeo já estiver pronto quando o efeito é executado
-      if (video.readyState >= 3) {
-        setCameraReady(true);
-      }
-
-      return () => {
-        video.removeEventListener('canplay', handleCanPlay);
-        video.removeEventListener('error', handleError);
-      };
-    }
-  }, [stream]);
 
   const removerFoto = (index: number) => {
     URL.revokeObjectURL(fotosPreview[index]); // Limpar URL objeto
@@ -173,13 +63,9 @@ CPF: ${formData.cpf}
       // Tentar usar a Web Share API primeiro
       if (navigator.share) {
         try {
-          const arquivos = fotos.map((foto, index) => 
-            new File([foto], `foto_${index + 1}.jpg`, { type: 'image/jpeg' })
-          );
-
           await navigator.share({
             text: mensagem,
-            files: arquivos
+            files: fotos
           });
           return;
         } catch (error) {
@@ -207,15 +93,6 @@ CPF: ${formData.cpf}
       alert('Erro ao compartilhar. Por favor, tente novamente.');
     }
   };
-
-  // Limpar recursos quando o componente for desmontado
-  useEffect(() => {
-    return () => {
-      pararCamera();
-      // Limpar URLs de preview
-      fotosPreview.forEach(url => URL.revokeObjectURL(url));
-    };
-  }, []);
 
   return (
     <main className="min-h-screen p-4 max-w-md mx-auto">
@@ -290,33 +167,21 @@ CPF: ${formData.cpf}
       </form>
 
       <div className="mt-6">
+        <input
+          type="file"
+          accept="image/*"
+          capture="environment"
+          multiple
+          onChange={handleFotoChange}
+          ref={fileInputRef}
+          className="hidden"
+        />
         <button
-          onClick={stream ? pararCamera : iniciarCamera}
+          onClick={() => fileInputRef.current?.click()}
           className="w-full bg-blue-500 text-white p-2 rounded mb-4"
         >
-          {stream ? 'Fechar Câmera' : 'Abrir Câmera'}
+          Tirar Foto
         </button>
-
-        {stream && (
-          <div className="relative">
-            <video
-              ref={videoRef}
-              autoPlay
-              playsInline
-              muted
-              className="w-full rounded"
-              style={{ transform: 'scaleX(-1)' }}
-            />
-            <canvas ref={canvasRef} style={{ display: 'none' }} />
-            <button
-              onClick={tirarFoto}
-              className={`mt-2 w-full ${cameraReady ? 'bg-green-500' : 'bg-gray-400'} text-white p-2 rounded`}
-              disabled={!cameraReady}
-            >
-              {cameraReady ? 'Tirar Foto' : 'Aguarde...'}
-            </button>
-          </div>
-        )}
 
         <div className="mt-4 grid grid-cols-2 gap-2">
           {fotosPreview.map((foto, index) => (

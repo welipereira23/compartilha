@@ -125,9 +125,17 @@ export default function Home() {
   const compartilharWhatsApp = async () => {
     try {
       // Criar texto da mensagem
-      const mensagem = `
-*Dados do Formulário:*${formData.nome ? `\nNome: ${formData.nome}` : ''}${formData.mae ? `\nMãe: ${formData.mae}` : ''}${formData.pai ? `\nPai: ${formData.pai}` : ''}${formData.nascimento ? `\nData de Nascimento: ${formData.nascimento}` : ''}${formData.rg ? `\nRG: ${formData.rg}` : ''}${formData.cpf ? `\nCPF: ${formData.cpf}` : ''}
-      `.trim();
+      const partes = [
+        '*Dados do Formulário:*',
+        formData.nome && `Nome: ${formData.nome}`,
+        formData.mae && `Mãe: ${formData.mae}`,
+        formData.pai && `Pai: ${formData.pai}`,
+        formData.nascimento && `Data de Nascimento: ${formData.nascimento}`,
+        formData.rg && `RG: ${formData.rg}`,
+        formData.cpf && `CPF: ${formData.cpf}`
+      ].filter(Boolean);
+
+      const mensagem = partes.join('\n');
 
       // Tentar compartilhar usando a API nativa
       try {
@@ -147,12 +155,6 @@ export default function Home() {
       // Método alternativo: Abrir WhatsApp com o texto
       const whatsappUrl = `whatsapp://send?text=${encodeURIComponent(mensagem)}`;
       window.open(whatsappUrl, '_blank');
-
-      // Criar um arquivo zip com as fotos
-      const formData = new FormData();
-      fotos.forEach((foto, index) => {
-        formData.append('fotos[]', foto);
-      });
 
       // Baixar as fotos individualmente
       fotos.forEach((foto, index) => {

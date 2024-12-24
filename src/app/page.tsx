@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 
 interface FormData {
   nome: string;
@@ -22,7 +22,14 @@ export default function Home() {
   });
   const [fotos, setFotos] = useState<File[]>([]);
   const [fotosPreview, setFotosPreview] = useState<string[]>([]);
+  const [isPWA, setIsPWA] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Verificar se está rodando como PWA
+  useEffect(() => {
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
+    setIsPWA(isStandalone);
+  }, []);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -54,23 +61,40 @@ export default function Home() {
 *Dados do Formulário:*${formData.nome ? `\nNome: ${formData.nome}` : ''}${formData.mae ? `\nMãe: ${formData.mae}` : ''}${formData.pai ? `\nPai: ${formData.pai}` : ''}${formData.nascimento ? `\nData de Nascimento: ${formData.nascimento}` : ''}${formData.rg ? `\nRG: ${formData.rg}` : ''}${formData.cpf ? `\nCPF: ${formData.cpf}` : ''}
       `.trim();
 
-      // Primeiro enviar o texto para o WhatsApp
-      window.open(`whatsapp://send?text=${encodeURIComponent(mensagem)}`, '_blank');
+      // Se estiver rodando como PWA, tenta usar a Web Share API
+      if (isPWA && navigator.share) {
+        try {
+          await navigator.share({
+            text: mensagem,
+            files: fotos
+          });
+          return;
+        } catch (error) {
+          console.log('Erro no Web Share API, tentando método alternativo');
+        }
+      }
 
-      // Aguardar um momento antes de baixar as fotos
-      setTimeout(() => {
-        // Baixar as fotos automaticamente
-        fotos.forEach((foto, index) => {
-          const url = URL.createObjectURL(foto);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `foto_${index + 1}.jpg`;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-        });
-      }, 1000);
+      // Método alternativo
+      const whatsappUrl = `whatsapp://send?text=${encodeURIComponent(mensagem)}`;
+      
+      // Em PWA, podemos abrir em nova janela
+      if (isPWA) {
+        window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+      } else {
+        window.location.href = whatsappUrl;
+      }
+
+      // Baixar as fotos
+      fotos.forEach((foto, index) => {
+        const url = URL.createObjectURL(foto);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `foto_${index + 1}.jpg`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      });
     } catch (error) {
       console.error('Erro ao compartilhar:', error);
       alert('Erro ao compartilhar. Por favor, tente novamente.');
@@ -79,6 +103,14 @@ export default function Home() {
 
   return (
     <main className="min-h-screen p-4 max-w-md mx-auto">
+      {!isPWA && (
+        <div className="bg-yellow-100 border-l-4 border-yellow-500 p-4 mb-4">
+          <p className="text-yellow-700">
+            Para melhor experiência, instale o aplicativo clicando no botão "Adicionar à tela inicial" no seu navegador.
+          </p>
+        </div>
+      )}
+
       <h1 className="text-2xl font-bold mb-6">Formulário de Envio</h1>
       
       <form className="space-y-4" onSubmit={(e) => e.preventDefault()}>

@@ -35,23 +35,36 @@ export default function Home() {
   const iniciarCamera = async () => {
     try {
       setCameraReady(false);
+      let mediaStream: MediaStream;
+
       // Primeiro tenta a câmera traseira
       try {
-        const mediaStream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { exact: "environment" } }
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+          video: { 
+            facingMode: { exact: "environment" },
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          }
         });
-        setStream(mediaStream);
-        if (videoRef.current) {
-          videoRef.current.srcObject = mediaStream;
-        }
       } catch {
         // Se não conseguir a câmera traseira, tenta qualquer câmera
-        const mediaStream = await navigator.mediaDevices.getUserMedia({
-          video: true
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          }
         });
-        setStream(mediaStream);
-        if (videoRef.current) {
-          videoRef.current.srcObject = mediaStream;
+      }
+
+      setStream(mediaStream);
+      
+      if (videoRef.current) {
+        videoRef.current.srcObject = mediaStream;
+        // Forçar o play do vídeo
+        try {
+          await videoRef.current.play();
+        } catch (error) {
+          console.error('Erro ao iniciar o vídeo:', error);
         }
       }
     } catch (error) {
@@ -82,8 +95,11 @@ export default function Home() {
       const canvas = canvasRef.current;
       
       // Configurar canvas com as dimensões do vídeo
-      canvas.width = video.videoWidth || 640;
-      canvas.height = video.videoHeight || 480;
+      const width = video.videoWidth || video.clientWidth || 1280;
+      const height = video.videoHeight || video.clientHeight || 720;
+      
+      canvas.width = width;
+      canvas.height = height;
       
       // Capturar frame do vídeo
       const context = canvas.getContext('2d');
@@ -91,7 +107,7 @@ export default function Home() {
         // Se o vídeo estiver espelhado, espelhar o canvas também
         context.save();
         context.scale(-1, 1);
-        context.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
+        context.drawImage(video, -width, 0, width, height);
         context.restore();
         
         // Converter para blob
@@ -111,11 +127,26 @@ export default function Home() {
     const video = videoRef.current;
     if (video) {
       const handleCanPlay = () => {
+        console.log('Vídeo pronto para reprodução');
         setCameraReady(true);
       };
+
+      const handleError = (error: Event) => {
+        console.error('Erro no vídeo:', error);
+        setCameraReady(false);
+      };
+
       video.addEventListener('canplay', handleCanPlay);
+      video.addEventListener('error', handleError);
+
+      // Se o vídeo já estiver pronto quando o efeito é executado
+      if (video.readyState >= 3) {
+        setCameraReady(true);
+      }
+
       return () => {
         video.removeEventListener('canplay', handleCanPlay);
+        video.removeEventListener('error', handleError);
       };
     }
   }, [stream]);

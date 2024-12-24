@@ -22,6 +22,22 @@
   ],
   "permissions": [
     "camera",
-    "storage"
-  ]
+    "storage",
+    "files",
+    "share-target",
+    "web-share-target"
+  ],
+  "share_target": {
+    "action": "/",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "files": [
+        {
+          "name": "fotos",
+          "accept": ["image/*"]
+        }
+      ]
+    }
+  }
 } 

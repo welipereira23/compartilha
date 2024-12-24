@@ -11,6 +11,11 @@ interface FormData {
   cpf: string;
 }
 
+interface BeforeInstallPromptEvent extends Event {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
+}
+
 export default function Home() {
   const [formData, setFormData] = useState<FormData>({
     nome: '',
@@ -23,29 +28,92 @@ export default function Home() {
   const [fotos, setFotos] = useState<File[]>([]);
   const [fotosPreview, setFotosPreview] = useState<string[]>([]);
   const [isPWA, setIsPWA] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Verificar se está rodando como PWA
+  // Verificar se está rodando como PWA e capturar evento de instalação
   useEffect(() => {
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
     setIsPWA(isStandalone);
+
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e as BeforeInstallPromptEvent);
+    });
   }, []);
+
+  const handleInstall = async () => {
+    if (deferredPrompt) {
+      await deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setDeferredPrompt(null);
+      }
+    }
+  };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleFotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files) {
       const novasfotos = Array.from(files);
-      setFotos(prev => [...prev, ...novasfotos]);
+      
+      // Comprimir e converter as fotos para um tamanho menor
+      const fotosProcessadas = await Promise.all(
+        novasfotos.map(async (foto) => {
+          const compressedBlob = await comprimirFoto(foto);
+          return new File([compressedBlob], foto.name, { type: 'image/jpeg' });
+        })
+      );
+      
+      setFotos(prev => [...prev, ...fotosProcessadas]);
       
       // Criar URLs para preview
-      const novosPreview = novasfotos.map(foto => URL.createObjectURL(foto));
+      const novosPreview = fotosProcessadas.map(foto => URL.createObjectURL(foto));
       setFotosPreview(prev => [...prev, ...novosPreview]);
     }
+  };
+
+  const comprimirFoto = async (file: File): Promise<Blob> => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          
+          // Redimensionar se a imagem for muito grande
+          const MAX_SIZE = 1024;
+          if (width > height && width > MAX_SIZE) {
+            height = (height * MAX_SIZE) / width;
+            width = MAX_SIZE;
+          } else if (height > MAX_SIZE) {
+            width = (width * MAX_SIZE) / height;
+            height = MAX_SIZE;
+          }
+          
+          canvas.width = width;
+          canvas.height = height;
+          
+          const ctx = canvas.getContext('2d');
+          ctx?.drawImage(img, 0, 0, width, height);
+          
+          canvas.toBlob(
+            (blob) => resolve(blob!),
+            'image/jpeg',
+            0.7 // qualidade da compressão
+          );
+        };
+        img.src = e.target?.result as string;
+      };
+      reader.readAsDataURL(file);
+    });
   };
 
   const removerFoto = (index: number) => {
@@ -61,30 +129,32 @@ export default function Home() {
 *Dados do Formulário:*${formData.nome ? `\nNome: ${formData.nome}` : ''}${formData.mae ? `\nMãe: ${formData.mae}` : ''}${formData.pai ? `\nPai: ${formData.pai}` : ''}${formData.nascimento ? `\nData de Nascimento: ${formData.nascimento}` : ''}${formData.rg ? `\nRG: ${formData.rg}` : ''}${formData.cpf ? `\nCPF: ${formData.cpf}` : ''}
       `.trim();
 
-      // Se estiver rodando como PWA, tenta usar a Web Share API
-      if (isPWA && navigator.share) {
-        try {
-          await navigator.share({
-            text: mensagem,
-            files: fotos
-          });
+      // Tentar compartilhar usando a API nativa
+      try {
+        const shareData: ShareData = {
+          text: mensagem,
+          files: fotos,
+        };
+
+        if (navigator.canShare && navigator.canShare(shareData)) {
+          await navigator.share(shareData);
           return;
-        } catch (error) {
-          console.log('Erro no Web Share API, tentando método alternativo');
         }
+      } catch (error) {
+        console.log('Erro no compartilhamento nativo, tentando método alternativo');
       }
 
-      // Método alternativo
+      // Método alternativo: Abrir WhatsApp com o texto
       const whatsappUrl = `whatsapp://send?text=${encodeURIComponent(mensagem)}`;
-      
-      // Em PWA, podemos abrir em nova janela
-      if (isPWA) {
-        window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
-      } else {
-        window.location.href = whatsappUrl;
-      }
+      window.open(whatsappUrl, '_blank');
 
-      // Baixar as fotos
+      // Criar um arquivo zip com as fotos
+      const formData = new FormData();
+      fotos.forEach((foto, index) => {
+        formData.append('fotos[]', foto);
+      });
+
+      // Baixar as fotos individualmente
       fotos.forEach((foto, index) => {
         const url = URL.createObjectURL(foto);
         const a = document.createElement('a');
@@ -103,11 +173,17 @@ export default function Home() {
 
   return (
     <main className="min-h-screen p-4 max-w-md mx-auto">
-      {!isPWA && (
-        <div className="bg-yellow-100 border-l-4 border-yellow-500 p-4 mb-4">
-          <p className="text-yellow-700">
-            Para melhor experiência, instale o aplicativo clicando no botão "Adicionar à tela inicial" no seu navegador.
+      {!isPWA && deferredPrompt && (
+        <div className="bg-blue-100 border-l-4 border-blue-500 p-4 mb-4">
+          <p className="text-blue-700 mb-2">
+            Instale nosso aplicativo para uma melhor experiência!
           </p>
+          <button
+            onClick={handleInstall}
+            className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+          >
+            Instalar Aplicativo
+          </button>
         </div>
       )}
 

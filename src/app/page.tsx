@@ -27,29 +27,38 @@ export default function Home() {
   });
   const [fotos, setFotos] = useState<File[]>([]);
   const [fotosPreview, setFotosPreview] = useState<string[]>([]);
-  const [isPWA, setIsPWA] = useState(false);
-  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [showInstallButton, setShowInstallButton] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Verificar se está rodando como PWA e capturar evento de instalação
+  // Capturar evento de instalação
   useEffect(() => {
-    const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
-    setIsPWA(isStandalone);
-
-    window.addEventListener('beforeinstallprompt', (e) => {
+    const handler = (e: Event) => {
       e.preventDefault();
-      setDeferredPrompt(e as BeforeInstallPromptEvent);
-    });
+      setDeferredPrompt(e);
+      setShowInstallButton(true);
+    };
+
+    window.addEventListener('beforeinstallprompt', handler);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handler);
+    };
   }, []);
 
   const handleInstall = async () => {
-    if (deferredPrompt) {
-      await deferredPrompt.prompt();
-      const { outcome } = await deferredPrompt.userChoice;
-      if (outcome === 'accepted') {
-        setDeferredPrompt(null);
-      }
+    if (!deferredPrompt) {
+      alert('O aplicativo já está instalado ou não pode ser instalado neste momento.');
+      return;
     }
+
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    
+    if (outcome === 'accepted') {
+      setShowInstallButton(false);
+    }
+    setDeferredPrompt(null);
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -137,36 +146,24 @@ export default function Home() {
 
       const mensagem = partes.join('\n');
 
-      // Tentar compartilhar usando a API nativa
-      try {
-        const shareData: ShareData = {
-          text: mensagem,
-          files: fotos,
-        };
-
-        if (navigator.canShare && navigator.canShare(shareData)) {
-          await navigator.share(shareData);
-          return;
-        }
-      } catch (error) {
-        console.log('Erro no compartilhamento nativo, tentando método alternativo');
-      }
-
-      // Método alternativo: Abrir WhatsApp com o texto
-      const whatsappUrl = `whatsapp://send?text=${encodeURIComponent(mensagem)}`;
+      // Primeiro enviar o texto para o WhatsApp
+      const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(mensagem)}`;
       window.open(whatsappUrl, '_blank');
 
-      // Baixar as fotos individualmente
-      fotos.forEach((foto, index) => {
-        const url = URL.createObjectURL(foto);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `foto_${index + 1}.jpg`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      });
+      // Aguardar um momento antes de baixar as fotos
+      setTimeout(() => {
+        // Baixar as fotos individualmente
+        fotos.forEach((foto, index) => {
+          const url = URL.createObjectURL(foto);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `foto_${index + 1}.jpg`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        });
+      }, 1000);
     } catch (error) {
       console.error('Erro ao compartilhar:', error);
       alert('Erro ao compartilhar. Por favor, tente novamente.');
@@ -175,19 +172,17 @@ export default function Home() {
 
   return (
     <main className="min-h-screen p-4 max-w-md mx-auto">
-      {!isPWA && deferredPrompt && (
-        <div className="bg-blue-100 border-l-4 border-blue-500 p-4 mb-4">
-          <p className="text-blue-700 mb-2">
-            Instale nosso aplicativo para uma melhor experiência!
-          </p>
+      <div className="fixed bottom-4 right-4 z-50">
+        {showInstallButton && (
           <button
             onClick={handleInstall}
-            className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+            className="bg-blue-500 text-white px-4 py-2 rounded-full shadow-lg hover:bg-blue-600 flex items-center"
           >
-            Instalar Aplicativo
+            <span className="mr-2">📱</span>
+            Instalar App
           </button>
-        </div>
-      )}
+        )}
+      </div>
 
       <h1 className="text-2xl font-bold mb-6">Formulário de Envio</h1>
       

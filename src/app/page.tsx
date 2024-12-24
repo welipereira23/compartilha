@@ -11,11 +11,6 @@ interface FormData {
   cpf: string;
 }
 
-interface BeforeInstallPromptEvent extends Event {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
-}
-
 export default function Home() {
   const [formData, setFormData] = useState<FormData>({
     nome: '',
@@ -27,39 +22,9 @@ export default function Home() {
   });
   const [fotos, setFotos] = useState<File[]>([]);
   const [fotosPreview, setFotosPreview] = useState<string[]>([]);
-  const [showInstallButton, setShowInstallButton] = useState(false);
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Capturar evento de instalação
-  useEffect(() => {
-    const handler = (e: Event) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-      setShowInstallButton(true);
-    };
-
-    window.addEventListener('beforeinstallprompt', handler);
-
-    return () => {
-      window.removeEventListener('beforeinstallprompt', handler);
-    };
-  }, []);
-
-  const handleInstall = async () => {
-    if (!deferredPrompt) {
-      alert('O aplicativo já está instalado ou não pode ser instalado neste momento.');
-      return;
-    }
-
-    deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-    
-    if (outcome === 'accepted') {
-      setShowInstallButton(false);
-    }
-    setDeferredPrompt(null);
-  };
+  const [numeroWhatsApp, setNumeroWhatsApp] = useState('');
+  const [mostrarNumero, setMostrarNumero] = useState(false);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -132,6 +97,11 @@ export default function Home() {
   };
 
   const compartilharWhatsApp = async () => {
+    if (!numeroWhatsApp) {
+      setMostrarNumero(true);
+      return;
+    }
+
     try {
       // Criar texto da mensagem
       const partes = [
@@ -146,24 +116,24 @@ export default function Home() {
 
       const mensagem = partes.join('\n');
 
-      // Primeiro enviar o texto para o WhatsApp
-      const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(mensagem)}`;
+      // Formatar o número do WhatsApp (remover caracteres não numéricos)
+      const numeroFormatado = numeroWhatsApp.replace(/\D/g, '');
+      
+      // Criar o link do WhatsApp com o número e a mensagem
+      const whatsappUrl = `https://api.whatsapp.com/send?phone=${numeroFormatado}&text=${encodeURIComponent(mensagem)}`;
       window.open(whatsappUrl, '_blank');
 
-      // Aguardar um momento antes de baixar as fotos
-      setTimeout(() => {
-        // Baixar as fotos individualmente
-        fotos.forEach((foto, index) => {
-          const url = URL.createObjectURL(foto);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `foto_${index + 1}.jpg`;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-        });
-      }, 1000);
+      // Baixar as fotos
+      fotos.forEach((foto, index) => {
+        const url = URL.createObjectURL(foto);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `foto_${index + 1}.jpg`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      });
     } catch (error) {
       console.error('Erro ao compartilhar:', error);
       alert('Erro ao compartilhar. Por favor, tente novamente.');
@@ -172,18 +142,6 @@ export default function Home() {
 
   return (
     <main className="min-h-screen p-4 max-w-md mx-auto">
-      <div className="fixed bottom-4 right-4 z-50">
-        {showInstallButton && (
-          <button
-            onClick={handleInstall}
-            className="bg-blue-500 text-white px-4 py-2 rounded-full shadow-lg hover:bg-blue-600 flex items-center"
-          >
-            <span className="mr-2">📱</span>
-            Instalar App
-          </button>
-        )}
-      </div>
-
       <h1 className="text-2xl font-bold mb-6">Formulário de Envio</h1>
       
       <form className="space-y-4" onSubmit={(e) => e.preventDefault()}>
@@ -252,6 +210,19 @@ export default function Home() {
             className="w-full p-2 border rounded"
           />
         </div>
+
+        {mostrarNumero && (
+          <div>
+            <label className="block text-sm font-medium mb-1">Número do WhatsApp (com DDD)</label>
+            <input
+              type="tel"
+              value={numeroWhatsApp}
+              onChange={(e) => setNumeroWhatsApp(e.target.value)}
+              placeholder="Ex: 11999999999"
+              className="w-full p-2 border rounded"
+            />
+          </div>
+        )}
       </form>
 
       <div className="mt-6">
@@ -294,7 +265,7 @@ export default function Home() {
           className="w-full bg-green-600 text-white p-2 rounded mt-6"
           disabled={fotos.length === 0}
         >
-          Compartilhar no WhatsApp
+          {mostrarNumero ? 'Enviar' : 'Compartilhar no WhatsApp'}
         </button>
       </div>
     </main>

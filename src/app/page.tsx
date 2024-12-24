@@ -33,14 +33,26 @@ export default function Home() {
 
   const iniciarCamera = async () => {
     try {
-      const mediaStream = await navigator.mediaDevices.getUserMedia({ 
-        video: { 
-          facingMode: { exact: "environment" } 
-        } 
-      });
-      setStream(mediaStream);
-      if (videoRef.current) {
-        videoRef.current.srcObject = mediaStream;
+      // Primeiro tenta a câmera traseira
+      try {
+        const mediaStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { exact: "environment" } }
+        });
+        setStream(mediaStream);
+        if (videoRef.current) {
+          videoRef.current.srcObject = mediaStream;
+          await videoRef.current.play();
+        }
+      } catch {
+        // Se não conseguir a câmera traseira, tenta qualquer câmera
+        const mediaStream = await navigator.mediaDevices.getUserMedia({
+          video: true
+        });
+        setStream(mediaStream);
+        if (videoRef.current) {
+          videoRef.current.srcObject = mediaStream;
+          await videoRef.current.play();
+        }
       }
     } catch (error) {
       console.error('Erro ao acessar a câmera:', error);
@@ -52,6 +64,9 @@ export default function Home() {
     if (stream) {
       stream.getTracks().forEach(track => track.stop());
       setStream(null);
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+      }
     }
   };
 
@@ -61,8 +76,8 @@ export default function Home() {
       const canvas = canvasRef.current;
       
       // Configurar canvas com as dimensões do vídeo
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
       
       // Capturar frame do vídeo
       const context = canvas.getContext('2d');
@@ -72,8 +87,9 @@ export default function Home() {
         // Converter para blob
         canvas.toBlob((blob) => {
           if (blob) {
+            const novaFoto = URL.createObjectURL(blob);
             setFotos(prev => [...prev, blob]);
-            setFotosPreview(prev => [...prev, URL.createObjectURL(blob)]);
+            setFotosPreview(prev => [...prev, novaFoto]);
           }
         }, 'image/jpeg', 0.8);
       }
@@ -81,6 +97,7 @@ export default function Home() {
   };
 
   const removerFoto = (index: number) => {
+    URL.revokeObjectURL(fotosPreview[index]); // Limpar URL objeto
     setFotos(prev => prev.filter((_, i) => i !== index));
     setFotosPreview(prev => prev.filter((_, i) => i !== index));
   };
@@ -98,33 +115,50 @@ RG: ${formData.rg}
 CPF: ${formData.cpf}
       `.trim();
 
-      // Criar arquivos das fotos
-      const arquivos = fotos.map((foto, index) => 
-        new File([foto], `foto_${index + 1}.jpg`, { type: 'image/jpeg' })
-      );
+      // Tentar usar a Web Share API primeiro
+      if (navigator.share) {
+        try {
+          const arquivos = fotos.map((foto, index) => 
+            new File([foto], `foto_${index + 1}.jpg`, { type: 'image/jpeg' })
+          );
 
-      // Criar FormData com texto e fotos
-      const formDataToSend = new FormData();
-      formDataToSend.append('text', mensagem);
-      arquivos.forEach((file, index) => {
-        formDataToSend.append(`file${index}`, file);
-      });
+          await navigator.share({
+            text: mensagem,
+            files: arquivos
+          });
+          return;
+        } catch (error) {
+          console.log('Erro no Web Share API, tentando método alternativo');
+        }
+      }
 
-      // Criar Intent URL para o WhatsApp
-      const intentUrl = `intent://send?text=${encodeURIComponent(mensagem)}#Intent;scheme=whatsapp;package=com.whatsapp;end`;
-      
-      // Abrir WhatsApp com Intent
+      // Fallback para intent do WhatsApp
+      const intentUrl = `whatsapp://send?text=${encodeURIComponent(mensagem)}`;
       window.location.href = intentUrl;
+
+      // Baixar as fotos automaticamente
+      fotos.forEach((foto, index) => {
+        const url = URL.createObjectURL(foto);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `foto_${index + 1}.jpg`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      });
     } catch (error) {
       console.error('Erro ao compartilhar:', error);
       alert('Erro ao compartilhar. Por favor, tente novamente.');
     }
   };
 
-  // Limpar recursos da câmera quando componente for desmontado
+  // Limpar recursos quando o componente for desmontado
   useEffect(() => {
     return () => {
       pararCamera();
+      // Limpar URLs de preview
+      fotosPreview.forEach(url => URL.revokeObjectURL(url));
     };
   }, []);
 
@@ -214,7 +248,9 @@ CPF: ${formData.cpf}
               ref={videoRef}
               autoPlay
               playsInline
+              muted
               className="w-full rounded"
+              style={{ transform: 'scaleX(-1)' }}
             />
             <canvas ref={canvasRef} style={{ display: 'none' }} />
             <button

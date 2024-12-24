@@ -51,43 +51,26 @@ export default function Home() {
     try {
       // Criar texto da mensagem
       const mensagem = `
-*Dados do Formulário:*
-Nome: ${formData.nome}
-Mãe: ${formData.mae}
-Pai: ${formData.pai}
-Data de Nascimento: ${formData.nascimento}
-RG: ${formData.rg}
-CPF: ${formData.cpf}
+*Dados do Formulário:*${formData.nome ? `\nNome: ${formData.nome}` : ''}${formData.mae ? `\nMãe: ${formData.mae}` : ''}${formData.pai ? `\nPai: ${formData.pai}` : ''}${formData.nascimento ? `\nData de Nascimento: ${formData.nascimento}` : ''}${formData.rg ? `\nRG: ${formData.rg}` : ''}${formData.cpf ? `\nCPF: ${formData.cpf}` : ''}
       `.trim();
 
-      // Tentar usar a Web Share API primeiro
-      if (navigator.share) {
-        try {
-          await navigator.share({
-            text: mensagem,
-            files: fotos
-          });
-          return;
-        } catch (error) {
-          console.log('Erro no Web Share API, tentando método alternativo');
-        }
-      }
+      // Primeiro enviar o texto para o WhatsApp
+      window.open(`whatsapp://send?text=${encodeURIComponent(mensagem)}`, '_blank');
 
-      // Fallback para intent do WhatsApp
-      const intentUrl = `whatsapp://send?text=${encodeURIComponent(mensagem)}`;
-      window.location.href = intentUrl;
-
-      // Baixar as fotos automaticamente
-      fotos.forEach((foto, index) => {
-        const url = URL.createObjectURL(foto);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `foto_${index + 1}.jpg`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      });
+      // Aguardar um momento antes de baixar as fotos
+      setTimeout(() => {
+        // Baixar as fotos automaticamente
+        fotos.forEach((foto, index) => {
+          const url = URL.createObjectURL(foto);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `foto_${index + 1}.jpg`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        });
+      }, 1000);
     } catch (error) {
       console.error('Erro ao compartilhar:', error);
       alert('Erro ao compartilhar. Por favor, tente novamente.');

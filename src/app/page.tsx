@@ -1,7 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
-import Webcam from 'react-webcam';
+import { useState, useRef, useEffect } from 'react';
 
 interface FormData {
   nome: string;
@@ -21,32 +20,74 @@ export default function Home() {
     rg: '',
     cpf: '',
   });
-  const [fotos, setFotos] = useState<string[]>([]);
-  const [showCamera, setShowCamera] = useState(false);
-  const webcamRef = useRef<Webcam>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [fotos, setFotos] = useState<Blob[]>([]);
+  const [fotosPreview, setFotosPreview] = useState<string[]>([]);
+  const [stream, setStream] = useState<MediaStream | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
+  const iniciarCamera = async () => {
+    try {
+      const mediaStream = await navigator.mediaDevices.getUserMedia({ 
+        video: { 
+          facingMode: { exact: "environment" } 
+        } 
+      });
+      setStream(mediaStream);
+      if (videoRef.current) {
+        videoRef.current.srcObject = mediaStream;
+      }
+    } catch (error) {
+      console.error('Erro ao acessar a câmera:', error);
+      alert('Erro ao acessar a câmera. Verifique as permissões.');
+    }
+  };
+
+  const pararCamera = () => {
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+      setStream(null);
+    }
+  };
+
   const tirarFoto = () => {
-    if (webcamRef.current) {
-      const imageSrc = webcamRef.current.getScreenshot();
-      if (imageSrc) {
-        setFotos(prev => [...prev, imageSrc]);
+    if (videoRef.current && canvasRef.current) {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      
+      // Configurar canvas com as dimensões do vídeo
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      
+      // Capturar frame do vídeo
+      const context = canvas.getContext('2d');
+      if (context) {
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        
+        // Converter para blob
+        canvas.toBlob((blob) => {
+          if (blob) {
+            setFotos(prev => [...prev, blob]);
+            setFotosPreview(prev => [...prev, URL.createObjectURL(blob)]);
+          }
+        }, 'image/jpeg', 0.8);
       }
     }
   };
 
   const removerFoto = (index: number) => {
     setFotos(prev => prev.filter((_, i) => i !== index));
+    setFotosPreview(prev => prev.filter((_, i) => i !== index));
   };
 
   const compartilharWhatsApp = async () => {
     try {
-      // Criar o texto da mensagem
+      // Criar texto da mensagem
       const mensagem = `
 *Dados do Formulário:*
 Nome: ${formData.nome}
@@ -57,43 +98,35 @@ RG: ${formData.rg}
 CPF: ${formData.cpf}
       `.trim();
 
-      // Converter as fotos de base64 para arquivos
-      const files = await Promise.all(
-        fotos.map(async (foto, index) => {
-          const response = await fetch(foto);
-          const blob = await response.blob();
-          return new File([blob], `foto${index + 1}.jpg`, { type: 'image/jpeg' });
-        })
+      // Criar arquivos das fotos
+      const arquivos = fotos.map((foto, index) => 
+        new File([foto], `foto_${index + 1}.jpg`, { type: 'image/jpeg' })
       );
 
-      // Criar um input de arquivo temporário
-      const input = document.createElement('input');
-      input.type = 'file';
-      input.multiple = true;
-      input.style.display = 'none';
+      // Criar FormData com texto e fotos
+      const formDataToSend = new FormData();
+      formDataToSend.append('text', mensagem);
+      arquivos.forEach((file, index) => {
+        formDataToSend.append(`file${index}`, file);
+      });
 
-      // Criar um objeto DataTransfer e adicionar os arquivos
-      const dataTransfer = new DataTransfer();
-      files.forEach(file => dataTransfer.items.add(file));
-      input.files = dataTransfer.files;
-
-      // Adicionar o input ao documento
-      document.body.appendChild(input);
-
-      // Simular um clique para abrir o WhatsApp
-      const mensagemCodificada = encodeURIComponent(mensagem);
-      window.location.href = `whatsapp://send?text=${mensagemCodificada}`;
-
-      // Aguardar um momento e então simular o compartilhamento de arquivos
-      setTimeout(() => {
-        input.click();
-        document.body.removeChild(input);
-      }, 1000);
+      // Criar Intent URL para o WhatsApp
+      const intentUrl = `intent://send?text=${encodeURIComponent(mensagem)}#Intent;scheme=whatsapp;package=com.whatsapp;end`;
+      
+      // Abrir WhatsApp com Intent
+      window.location.href = intentUrl;
     } catch (error) {
       console.error('Erro ao compartilhar:', error);
       alert('Erro ao compartilhar. Por favor, tente novamente.');
     }
   };
+
+  // Limpar recursos da câmera quando componente for desmontado
+  useEffect(() => {
+    return () => {
+      pararCamera();
+    };
+  }, []);
 
   return (
     <main className="min-h-screen p-4 max-w-md mx-auto">
@@ -169,22 +202,21 @@ CPF: ${formData.cpf}
 
       <div className="mt-6">
         <button
-          onClick={() => setShowCamera(!showCamera)}
+          onClick={stream ? pararCamera : iniciarCamera}
           className="w-full bg-blue-500 text-white p-2 rounded mb-4"
         >
-          {showCamera ? 'Fechar Câmera' : 'Abrir Câmera'}
+          {stream ? 'Fechar Câmera' : 'Abrir Câmera'}
         </button>
 
-        {showCamera && (
+        {stream && (
           <div className="relative">
-            <Webcam
-              ref={webcamRef}
-              screenshotFormat="image/jpeg"
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
               className="w-full rounded"
-              videoConstraints={{
-                facingMode: { exact: "environment" }
-              }}
             />
+            <canvas ref={canvasRef} style={{ display: 'none' }} />
             <button
               onClick={tirarFoto}
               className="mt-2 w-full bg-green-500 text-white p-2 rounded"
@@ -195,7 +227,7 @@ CPF: ${formData.cpf}
         )}
 
         <div className="mt-4 grid grid-cols-2 gap-2">
-          {fotos.map((foto, index) => (
+          {fotosPreview.map((foto, index) => (
             <div key={index} className="relative">
               <img
                 src={foto}
@@ -220,14 +252,6 @@ CPF: ${formData.cpf}
           Compartilhar no WhatsApp
         </button>
       </div>
-
-      <input
-        type="file"
-        ref={fileInputRef}
-        style={{ display: 'none' }}
-        multiple
-        accept="image/*"
-      />
     </main>
   );
 } 

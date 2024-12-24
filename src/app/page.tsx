@@ -24,6 +24,7 @@ export default function Home() {
   const [fotos, setFotos] = useState<string[]>([]);
   const [showCamera, setShowCamera] = useState(false);
   const webcamRef = useRef<Webcam>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -39,8 +40,14 @@ export default function Home() {
     }
   };
 
-  const compartilharWhatsApp = () => {
-    const mensagem = `
+  const removerFoto = (index: number) => {
+    setFotos(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const compartilharWhatsApp = async () => {
+    try {
+      // Criar o texto da mensagem
+      const mensagem = `
 *Dados do Formulário:*
 Nome: ${formData.nome}
 Mãe: ${formData.mae}
@@ -48,27 +55,44 @@ Pai: ${formData.pai}
 Data de Nascimento: ${formData.nascimento}
 RG: ${formData.rg}
 CPF: ${formData.cpf}
-    `.trim();
+      `.trim();
 
-    // Criar um link para compartilhar no WhatsApp
-    const mensagemCodificada = encodeURIComponent(mensagem);
-    const whatsappUrl = `whatsapp://send?text=${mensagemCodificada}`;
+      // Converter as fotos de base64 para arquivos
+      const files = await Promise.all(
+        fotos.map(async (foto, index) => {
+          const response = await fetch(foto);
+          const blob = await response.blob();
+          return new File([blob], `foto${index + 1}.jpg`, { type: 'image/jpeg' });
+        })
+      );
 
-    // Abrir o WhatsApp
-    window.location.href = whatsappUrl;
+      // Criar um input de arquivo temporário
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.multiple = true;
+      input.style.display = 'none';
 
-    // Depois que o WhatsApp abrir, compartilhar cada foto individualmente
-    setTimeout(() => {
-      fotos.forEach((foto) => {
-        // Criar um elemento <a> temporário para download
-        const link = document.createElement('a');
-        link.href = foto;
-        link.download = `foto-${Date.now()}.jpg`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      });
-    }, 1000);
+      // Criar um objeto DataTransfer e adicionar os arquivos
+      const dataTransfer = new DataTransfer();
+      files.forEach(file => dataTransfer.items.add(file));
+      input.files = dataTransfer.files;
+
+      // Adicionar o input ao documento
+      document.body.appendChild(input);
+
+      // Simular um clique para abrir o WhatsApp
+      const mensagemCodificada = encodeURIComponent(mensagem);
+      window.location.href = `whatsapp://send?text=${mensagemCodificada}`;
+
+      // Aguardar um momento e então simular o compartilhamento de arquivos
+      setTimeout(() => {
+        input.click();
+        document.body.removeChild(input);
+      }, 1000);
+    } catch (error) {
+      console.error('Erro ao compartilhar:', error);
+      alert('Erro ao compartilhar. Por favor, tente novamente.');
+    }
   };
 
   return (
@@ -172,12 +196,19 @@ CPF: ${formData.cpf}
 
         <div className="mt-4 grid grid-cols-2 gap-2">
           {fotos.map((foto, index) => (
-            <img
-              key={index}
-              src={foto}
-              alt={`Foto ${index + 1}`}
-              className="w-full rounded"
-            />
+            <div key={index} className="relative">
+              <img
+                src={foto}
+                alt={`Foto ${index + 1}`}
+                className="w-full rounded"
+              />
+              <button
+                onClick={() => removerFoto(index)}
+                className="absolute top-2 right-2 bg-red-500 text-white p-1 rounded-full w-6 h-6 flex items-center justify-center"
+              >
+                ×
+              </button>
+            </div>
           ))}
         </div>
 
@@ -189,6 +220,14 @@ CPF: ${formData.cpf}
           Compartilhar no WhatsApp
         </button>
       </div>
+
+      <input
+        type="file"
+        ref={fileInputRef}
+        style={{ display: 'none' }}
+        multiple
+        accept="image/*"
+      />
     </main>
   );
 } 

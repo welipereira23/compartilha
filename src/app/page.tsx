@@ -23,6 +23,7 @@ export default function Home() {
   const [fotos, setFotos] = useState<Blob[]>([]);
   const [fotosPreview, setFotosPreview] = useState<string[]>([]);
   const [stream, setStream] = useState<MediaStream | null>(null);
+  const [cameraReady, setCameraReady] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -33,6 +34,7 @@ export default function Home() {
 
   const iniciarCamera = async () => {
     try {
+      setCameraReady(false);
       // Primeiro tenta a câmera traseira
       try {
         const mediaStream = await navigator.mediaDevices.getUserMedia({
@@ -41,7 +43,6 @@ export default function Home() {
         setStream(mediaStream);
         if (videoRef.current) {
           videoRef.current.srcObject = mediaStream;
-          await videoRef.current.play();
         }
       } catch {
         // Se não conseguir a câmera traseira, tenta qualquer câmera
@@ -51,7 +52,6 @@ export default function Home() {
         setStream(mediaStream);
         if (videoRef.current) {
           videoRef.current.srcObject = mediaStream;
-          await videoRef.current.play();
         }
       }
     } catch (error) {
@@ -64,6 +64,7 @@ export default function Home() {
     if (stream) {
       stream.getTracks().forEach(track => track.stop());
       setStream(null);
+      setCameraReady(false);
       if (videoRef.current) {
         videoRef.current.srcObject = null;
       }
@@ -71,6 +72,11 @@ export default function Home() {
   };
 
   const tirarFoto = () => {
+    if (!cameraReady) {
+      alert('Aguarde a câmera inicializar completamente');
+      return;
+    }
+
     if (videoRef.current && canvasRef.current) {
       const video = videoRef.current;
       const canvas = canvasRef.current;
@@ -82,7 +88,11 @@ export default function Home() {
       // Capturar frame do vídeo
       const context = canvas.getContext('2d');
       if (context) {
-        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        // Se o vídeo estiver espelhado, espelhar o canvas também
+        context.save();
+        context.scale(-1, 1);
+        context.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
+        context.restore();
         
         // Converter para blob
         canvas.toBlob((blob) => {
@@ -95,6 +105,20 @@ export default function Home() {
       }
     }
   };
+
+  // Detectar quando o vídeo está realmente pronto
+  useEffect(() => {
+    const video = videoRef.current;
+    if (video) {
+      const handleCanPlay = () => {
+        setCameraReady(true);
+      };
+      video.addEventListener('canplay', handleCanPlay);
+      return () => {
+        video.removeEventListener('canplay', handleCanPlay);
+      };
+    }
+  }, [stream]);
 
   const removerFoto = (index: number) => {
     URL.revokeObjectURL(fotosPreview[index]); // Limpar URL objeto
@@ -255,9 +279,10 @@ CPF: ${formData.cpf}
             <canvas ref={canvasRef} style={{ display: 'none' }} />
             <button
               onClick={tirarFoto}
-              className="mt-2 w-full bg-green-500 text-white p-2 rounded"
+              className={`mt-2 w-full ${cameraReady ? 'bg-green-500' : 'bg-gray-400'} text-white p-2 rounded`}
+              disabled={!cameraReady}
             >
-              Tirar Foto
+              {cameraReady ? 'Tirar Foto' : 'Aguarde...'}
             </button>
           </div>
         )}
